@@ -6,52 +6,65 @@ export default function handler(req, res) {
     return;
   }
 
-  const { name, description = '', private = false } = req.body;
+  let body = '';
 
-  if (!name) {
-    res.status(400).json({ error: 'Repository name is required' });
-    return;
-  }
-
-  const token = process.env.GITHUB_TOKEN;
-  const data = JSON.stringify({
-    name,
-    description,
-    private,
+  // Gather the request body data
+  req.on('data', chunk => {
+    body += chunk.toString();
   });
 
-  const options = {
-    hostname: 'api.github.com',
-    path: '/user/repos',
-    method: 'POST',
-    headers: {
-      'Authorization': `token ${token}`,
-      'Content-Type': 'application/json',
-      'Content-Length': data.length,
-      'User-Agent': 'Node.js Serverless Function'
-    }
-  };
+  req.on('end', () => {
+    try {
+      const { name, description = '', private = false } = JSON.parse(body);
 
-  const apiRequest = https.request(options, (apiResponse) => {
-    let body = '';
-
-    apiResponse.on('data', (chunk) => {
-      body += chunk;
-    });
-
-    apiResponse.on('end', () => {
-      if (apiResponse.statusCode === 201) {
-        res.status(201).json({ message: 'Repository created successfully' });
-      } else {
-        res.status(apiResponse.statusCode).json({ error: 'Failed to create repository', details: JSON.parse(body) });
+      if (!name) {
+        res.status(400).json({ error: 'Repository name is required' });
+        return;
       }
-    });
-  });
 
-  apiRequest.on('error', (error) => {
-    res.status(500).json({ error: 'Internal Server Error', details: error.message });
-  });
+      const token = process.env.GITHUB_TOKEN;
+      const data = JSON.stringify({
+        name,
+        description,
+        private,
+      });
 
-  apiRequest.write(data);
-  apiRequest.end();
+      const options = {
+        hostname: 'api.github.com',
+        path: '/user/repos',
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+          'User-Agent': 'Node.js Serverless Function'
+        }
+      };
+
+      const apiRequest = https.request(options, (apiResponse) => {
+        let apiResponseBody = '';
+
+        apiResponse.on('data', (chunk) => {
+          apiResponseBody += chunk;
+        });
+
+        apiResponse.on('end', () => {
+          if (apiResponse.statusCode === 201) {
+            res.status(201).json({ message: 'Repository created successfully' });
+          } else {
+            res.status(apiResponse.statusCode).json({ error: 'Failed to create repository', details: JSON.parse(apiResponseBody) });
+          }
+        });
+      });
+
+      apiRequest.on('error', (error) => {
+        res.status(500).json({ error: 'Internal Server Error', details: error.message });
+      });
+
+      apiRequest.write(data);
+      apiRequest.end();
+    } catch (error) {
+      res.status(500).json({ error: 'Internal Server Error', details: error.message });
+    }
+  });
 }
